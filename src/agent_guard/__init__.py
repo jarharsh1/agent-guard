@@ -129,6 +129,14 @@ def _extract_domain(resource: str | None) -> str | None:
     return host.lower() if host else None
 
 
+# Tool names that invoke a shell and must go through the injection-character
+# check. Kept as a set so new shells can be added in one place; matched
+# case-insensitively so "Shell"/"PowerShell" are covered too.
+SHELL_TOOL_NAMES = frozenset(
+    {"shell", "bash", "sh", "zsh", "ksh", "fish", "dash", "ash", "cmd", "powershell", "pwsh"}
+)
+
+
 class Action(Enum):
     ALLOW = "allow"
     DENY = "deny"
@@ -541,8 +549,10 @@ class Guard:
                     risk=RiskLevel.MEDIUM,
                 )
 
-        # SECURITY: Sanitize shell resource to prevent command injection
-        if call.tool in ("shell", "bash"):
+        # SECURITY: Sanitize shell resource to prevent command injection.
+        # Match every shell-capable tool name, case-insensitively, so aliases
+        # like sh/zsh/powershell/cmd cannot bypass the check (see SHELL_TOOL_NAMES).
+        if (call.tool or "").lower() in SHELL_TOOL_NAMES:
             dangerous = [";", "|", "&", "$", "`", ">", "<", "\n", "\r", "&&", "||", "(", ")"]
             for ch in dangerous:
                 if ch in (call.resource or ""):
