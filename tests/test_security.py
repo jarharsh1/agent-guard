@@ -104,13 +104,24 @@ def test_shell_injection_backtick():
 
 
 @pytest.mark.parametrize(
-    "tool", ["sh", "zsh", "ksh", "fish", "dash", "cmd", "powershell", "pwsh", "Shell", "BASH"]
+    "tool",
+    [
+        # bare names
+        "sh", "zsh", "ksh", "fish", "dash", "csh", "tcsh", "cmd", "powershell", "pwsh",
+        # case variations
+        "Shell", "BASH", "PowerShell",
+        # path forms (POSIX + Windows)
+        "/bin/sh", "/usr/bin/zsh", r"C:\Windows\System32\cmd.exe",
+        # executable extensions
+        "powershell.exe", "pwsh.exe", "cmd.exe",
+    ],
 )
 def test_shell_injection_checked_for_all_shell_aliases(tool):
     """Shell-capable tool names beyond shell/bash must also be sanitised.
 
     Regression for the bypass where only the exact names "shell"/"bash" were
-    checked, so `sh`, `zsh`, `powershell`, etc. let `ls; rm -rf /` through.
+    checked, so `sh`, `zsh`, `powershell`, path forms like `/bin/sh`, and
+    `powershell.exe` let `ls; rm -rf /` through.
     """
     policy = Policy(name="t", description="t", default_action=Action.ALLOW, rules=[])
     guard = Guard(policy)
@@ -119,11 +130,13 @@ def test_shell_injection_checked_for_all_shell_aliases(tool):
     assert verdict.risk == RiskLevel.CRITICAL
 
 
-def test_non_shell_tool_not_subject_to_shell_check():
-    """A non-shell tool name is unaffected by the shell sanitiser."""
+@pytest.mark.parametrize("tool", ["browser", "fs.read", "http", "shellcheck", "bashful"])
+def test_non_shell_tool_not_subject_to_shell_check(tool):
+    """Non-shell tools (and names that merely contain 'shell'/'bash') are
+    unaffected by the shell sanitiser."""
     policy = Policy(name="t", description="t", default_action=Action.ALLOW, rules=[])
     guard = Guard(policy)
-    verdict = guard.check(ToolCall(tool="browser", resource="ls; rm -rf /"))
+    verdict = guard.check(ToolCall(tool=tool, resource="ls; rm -rf /"))
     assert verdict.allowed
 
 

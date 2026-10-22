@@ -130,11 +130,30 @@ def _extract_domain(resource: str | None) -> str | None:
 
 
 # Tool names that invoke a shell and must go through the injection-character
-# check. Kept as a set so new shells can be added in one place; matched
-# case-insensitively so "Shell"/"PowerShell" are covered too.
-SHELL_TOOL_NAMES = frozenset(
-    {"shell", "bash", "sh", "zsh", "ksh", "fish", "dash", "ash", "cmd", "powershell", "pwsh"}
+# check. Kept as a set so new shells can be added in one place.
+_SHELL_TOOL_NAMES = frozenset(
+    {
+        "shell", "bash", "sh", "zsh", "ksh", "fish", "dash", "ash",
+        "csh", "tcsh", "cmd", "powershell", "pwsh",
+    }
 )
+
+
+def _is_shell_tool(tool: str | None) -> bool:
+    """Return True if ``tool`` names a shell, tolerant of paths and extensions.
+
+    Normalises so that path forms (``/bin/sh``, ``C:\\Windows\\...\\cmd.exe``)
+    and Windows executables (``powershell.exe``) are matched too, not just the
+    bare lowercased name — an exact-name check alone is trivially bypassed.
+    """
+    if not tool:
+        return False
+    # Take the basename for both POSIX and Windows separators, drop a trailing
+    # executable extension, and lowercase.
+    base = re.split(r"[\\/]", tool)[-1].lower()
+    if base.endswith((".exe", ".bat", ".cmd", ".com")):
+        base = base.rsplit(".", 1)[0]
+    return base in _SHELL_TOOL_NAMES
 
 
 class Action(Enum):
@@ -550,9 +569,10 @@ class Guard:
                 )
 
         # SECURITY: Sanitize shell resource to prevent command injection.
-        # Match every shell-capable tool name, case-insensitively, so aliases
-        # like sh/zsh/powershell/cmd cannot bypass the check (see SHELL_TOOL_NAMES).
-        if (call.tool or "").lower() in SHELL_TOOL_NAMES:
+        # Match every shell-capable tool name — including path and .exe forms —
+        # so aliases like sh/zsh/csh/powershell/cmd or /bin/sh and powershell.exe
+        # cannot bypass the check (see _is_shell_tool / _SHELL_TOOL_NAMES).
+        if _is_shell_tool(call.tool):
             dangerous = [";", "|", "&", "$", "`", ">", "<", "\n", "\r", "&&", "||", "(", ")"]
             for ch in dangerous:
                 if ch in (call.resource or ""):
